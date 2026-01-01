@@ -1,0 +1,4 @@
+Category,Difficulty,Content,Points,Options,CorrectOption
+Science,EASY,What is water?,10,H2O|CO2|O2,H2O
+History,MEDIUM,Who was the first US president?,20,Lincoln|Washington|Jefferson,Washington
+Math,HARD,2 + 2 = ?,5,3|4|5,4
