@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: assista_backend
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./backend:/app
+      - ./frontend/dist:/app/public
+    restart: unless-stopped
+
