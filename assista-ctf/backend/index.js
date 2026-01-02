@@ -16,6 +16,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/questions', require('./routes/questions'));
 app.use('/api/quiz', require('./routes/quiz'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/admin', require('./routes/admin'));
 
 // Serve static files from the public folder (which will contain frontend build)
 app.use(express.static(path.join(__dirname, 'public')));

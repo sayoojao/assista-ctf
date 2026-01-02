@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const AdminDashboard = () => {
-    const [activeTab, setActiveTab] = useState('manual'); // manual, upload, category, users
+    const [activeTab, setActiveTab] = useState('manual'); // manual, upload, category, users, quiz-control
     const [file, setFile] = useState(null);
     const [message, setMessage] = useState('');
     const [categories, setCategories] = useState([]);
@@ -37,13 +37,17 @@ const AdminDashboard = () => {
     const [isEditUser, setIsEditUser] = useState(false);
     const [editUserId, setEditUserId] = useState(null);
 
+    // Quiz Control States
+    const [quizDuration, setQuizDuration] = useState(60);
+    const [quizStatus, setQuizStatus] = useState(null);
+
     useEffect(() => {
         fetchCategories();
     }, []);
 
     const fetchCategories = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/questions/categories');
+            const res = await axios.get('https://odoo-ctf.easyinstance.com/api/questions/categories');
             setCategories(res.data);
             if (res.data.length > 0) setQCategory(res.data[0].id);
         } catch (err) {
@@ -60,7 +64,7 @@ const AdminDashboard = () => {
         formData.append('file', file);
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.post('http://localhost:5000/api/questions/upload', formData, {
+            const res = await axios.post('https://odoo-ctf.easyinstance.com/api/questions/upload', formData, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setMessage(res.data.message);
@@ -80,7 +84,7 @@ const AdminDashboard = () => {
                 return;
             }
 
-            await axios.post('http://localhost:5000/api/questions/create', {
+            await axios.post('https://odoo-ctf.easyinstance.com/api/questions/create', {
                 categoryId: qCategory,
                 content: qContent,
                 difficulty: qDifficulty,
@@ -108,7 +112,7 @@ const AdminDashboard = () => {
     const fetchAllQuestions = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.get('http://localhost:5000/api/questions', {
+            const res = await axios.get('https://odoo-ctf.easyinstance.com/api/questions', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setAllQuestions(res.data);
@@ -132,7 +136,7 @@ const AdminDashboard = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('token');
-            await axios.put(`http://localhost:5000/api/questions/${editId}`, {
+            await axios.put(`https://odoo-ctf.easyinstance.com/api/questions/${editId}`, {
                 categoryId: editCategory,
                 content: editContent,
                 difficulty: editDifficulty,
@@ -153,7 +157,7 @@ const AdminDashboard = () => {
         if (!window.confirm('Are you sure you want to delete this question?')) return;
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`http://localhost:5000/api/questions/${id}`, {
+            await axios.delete(`https://odoo-ctf.easyinstance.com/api/questions/${id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setMessage('Question deleted.');
@@ -165,7 +169,7 @@ const AdminDashboard = () => {
         if (!window.confirm('WARNING: THIS WILL DELETE ALL QUESTIONS AND USER RESPONSES. ARE YOU SURE?')) return;
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`http://localhost:5000/api/questions/delete-all`, {
+            await axios.delete(`https://odoo-ctf.easyinstance.com/api/questions/delete-all`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setMessage('All data purged.');
@@ -177,7 +181,7 @@ const AdminDashboard = () => {
     const fetchUsers = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.get('http://localhost:5000/api/users', {
+            const res = await axios.get('https://odoo-ctf.easyinstance.com/api/users', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setUsers(res.data);
@@ -188,7 +192,7 @@ const AdminDashboard = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('token');
-            await axios.post('http://localhost:5000/api/users', {
+            await axios.post('https://odoo-ctf.easyinstance.com/api/users', {
                 username: uUsername,
                 email: uEmail,
                 password: uPassword,
@@ -204,7 +208,7 @@ const AdminDashboard = () => {
         if (!window.confirm('Delete user?')) return;
         try {
             const token = localStorage.getItem('token');
-            await axios.delete(`http://localhost:5000/api/users/${id}`, {
+            await axios.delete(`https://odoo-ctf.easyinstance.com/api/users/${id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             setMessage('User deleted');
@@ -225,7 +229,7 @@ const AdminDashboard = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('token');
-            await axios.put(`http://localhost:5000/api/users/${editUserId}`, {
+            await axios.put(`https://odoo-ctf.easyinstance.com/api/users/${editUserId}`, {
                 username: uUsername,
                 email: uEmail,
                 role: uRole,
@@ -243,6 +247,40 @@ const AdminDashboard = () => {
         setUUsername(''); setUEmail(''); setUPassword(''); setURole('USER');
     };
 
+    // Quiz Control Functions
+    const fetchQuizStatus = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get('https://odoo-ctf.easyinstance.com/api/admin/quiz-status', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setQuizStatus(res.data);
+        } catch (err) { console.error(err); }
+    };
+
+    const handleStartQuiz = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post('https://odoo-ctf.easyinstance.com/api/admin/start-quiz',
+                { duration: quizDuration },
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            setMessage(`Quiz started with ${quizDuration} minute duration`);
+            fetchQuizStatus();
+        } catch (err) { setMessage('Failed to start quiz'); }
+    };
+
+    const handleStopQuiz = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post('https://odoo-ctf.easyinstance.com/api/admin/stop-quiz', {}, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setMessage('Quiz stopped');
+            fetchQuizStatus();
+        } catch (err) { setMessage('Failed to stop quiz'); }
+    };
+
     return (
         <div className="max-w-4xl mx-auto mt-10 p-6 bg-cyber-gray border border-neon-blue/30 rounded shadow-lg text-gray-200">
             <h1 className="text-3xl font-bold mb-6 text-neon-blue font-mono">Admin_Control_Center</h1>
@@ -252,9 +290,64 @@ const AdminDashboard = () => {
                 <button onClick={() => setActiveTab('upload')} className={`px-4 py-2 ${activeTab === 'upload' ? 'border-b-2 border-neon-blue text-neon-blue' : 'text-gray-500 hover:text-gray-300'}`}>Bulk Upload (CSV)</button>
                 <button onClick={() => { setActiveTab('manage'); fetchAllQuestions(); }} className={`px-4 py-2 ${activeTab === 'manage' ? 'border-b-2 border-neon-blue text-neon-blue' : 'text-gray-500 hover:text-gray-300'}`}>Manage Questions</button>
                 <button onClick={() => { setActiveTab('users'); fetchUsers(); }} className={`px-4 py-2 ${activeTab === 'users' ? 'border-b-2 border-neon-blue text-neon-blue' : 'text-gray-500 hover:text-gray-300'}`}>Manage Users</button>
+                <button onClick={() => { setActiveTab('quiz-control'); fetchQuizStatus(); }} className={`px-4 py-2 ${activeTab === 'quiz-control' ? 'border-b-2 border-neon-blue text-neon-blue' : 'text-gray-500 hover:text-gray-300'}`}>Quiz Control</button>
             </div>
 
             {message && <div className="mb-4 p-2 bg-blue-900/50 border border-blue-500 text-blue-200 rounded">{message}</div>}
+
+            {/* QUIZ CONTROL TAB */}
+            {activeTab === 'quiz-control' && (
+                <div className="font-mono">
+                    <div className="bg-dark-bg p-6 rounded border border-gray-700 mb-6">
+                        <h3 className="text-neon-purple font-bold mb-4 text-xl">Quiz Control Panel</h3>
+
+                        {quizStatus && (
+                            <div className="mb-6 p-4 bg-cyber-gray border border-gray-600 rounded">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <span className="text-gray-400">Status:</span>
+                                    <span className={`px-3 py-1 rounded font-bold ${quizStatus.is_active ? 'bg-green-900/50 text-green-400 border border-green-500' : 'bg-red-900/50 text-red-400 border border-red-500'}`}>
+                                        {quizStatus.is_active ? 'ACTIVE' : 'INACTIVE'}
+                                    </span>
+                                </div>
+                                {quizStatus.is_active && (
+                                    <>
+                                        <div className="text-gray-400 text-sm">Duration: {quizStatus.duration_minutes} minutes</div>
+                                        <div className="text-gray-400 text-sm">Started: {new Date(quizStatus.start_time).toLocaleString()}</div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm text-neon-purple mb-2">Quiz Duration (minutes)</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    className="w-full bg-cyber-gray border border-gray-600 p-3 rounded text-white"
+                                    value={quizDuration}
+                                    onChange={e => setQuizDuration(parseInt(e.target.value))}
+                                />
+                            </div>
+
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={handleStartQuiz}
+                                    className="flex-1 bg-green-900/20 text-green-400 border border-green-500 py-3 rounded hover:bg-green-500 hover:text-white transition-all font-bold"
+                                >
+                                    ▶ START QUIZ
+                                </button>
+                                <button
+                                    onClick={handleStopQuiz}
+                                    className="flex-1 bg-red-900/20 text-red-400 border border-red-500 py-3 rounded hover:bg-red-500 hover:text-white transition-all font-bold"
+                                >
+                                    ■ STOP QUIZ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* USERS TAB */}
             {activeTab === 'users' && (

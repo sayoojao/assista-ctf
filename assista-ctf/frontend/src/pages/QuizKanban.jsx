@@ -9,8 +9,10 @@ const KanbanQuiz = () => {
     const [filterCategory, setFilterCategory] = useState('');
     const [filterDifficulty, setFilterDifficulty] = useState('');
 
-    // Values: 'ALL', 'UNANSWERED', 'CORRECT', 'INCORRECT' (optional filter?) 
-    // User asked for Cat and Diff filters.
+    // Quiz Status & Timer State
+    const [quizStatus, setQuizStatus] = useState(null);
+    const [timeRemaining, setTimeRemaining] = useState(null);
+    const [isFinished, setIsFinished] = useState(false);
 
     // Modal
     const [selectedQ, setSelectedQ] = useState(null);
@@ -19,8 +21,85 @@ const KanbanQuiz = () => {
     const navigate = useNavigate();
 
     useEffect(() => {
-        fetchData();
+        const init = async () => {
+            await checkQuizStatus();
+            await fetchData();
+        };
+        init();
     }, []);
+
+    // Periodic Quiz Status Check (Detects Admin Stop / Expiration)
+    useEffect(() => {
+        if (!quizStatus?.is_active) return;
+
+        const statusChecker = setInterval(async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.get('https://odoo-ctf.easyinstance.com/api/admin/quiz-status', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                // If quiz was stopped by admin or expired
+                if (!res.data.is_active) {
+                    setQuizStatus(res.data);
+                    alert('Quiz has been stopped by the administrator or time has expired');
+                    navigate('/');
+                }
+            } catch (err) {
+                console.error('Status check failed:', err);
+            }
+        }, 5000); // Check every 5 seconds
+
+        return () => clearInterval(statusChecker);
+    }, [quizStatus, navigate]);
+
+    // Timer countdown
+    useEffect(() => {
+        if (timeRemaining === null || timeRemaining === 0) return;
+
+        const timer = setInterval(() => {
+            setTimeRemaining(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [timeRemaining]);
+
+    const checkQuizStatus = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const headers = { 'Authorization': `Bearer ${token}` };
+
+            // Check if quiz is active
+            const statusRes = await axios.get('https://odoo-ctf.easyinstance.com/api/admin/quiz-status', { headers });
+            setQuizStatus(statusRes.data);
+
+            if (!statusRes.data.is_active) {
+                return; // Will verify loading state later or redirect
+            }
+
+            // Calculate time remaining
+            // Ensure server time is treated as UTC
+            let timeStr = statusRes.data.start_time;
+            if (timeStr && !timeStr.endsWith('Z')) {
+                timeStr = timeStr.replace(' ', 'T') + 'Z';
+            }
+            const startTime = new Date(timeStr).getTime();
+            const duration = statusRes.data.duration_minutes * 60 * 1000;
+            const endTime = startTime + duration;
+            const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+
+            setTimeRemaining(remaining); // Always set logic, even if 0
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -28,8 +107,8 @@ const KanbanQuiz = () => {
             const headers = { 'Authorization': `Bearer ${token}` };
 
             const [qRes, cRes] = await Promise.all([
-                axios.get('http://localhost:5000/api/questions', { headers }),
-                axios.get('http://localhost:5000/api/questions/categories')
+                axios.get('https://odoo-ctf.easyinstance.com/api/questions', { headers }),
+                axios.get('https://odoo-ctf.easyinstance.com/api/questions/categories')
             ]);
 
             setQuestions(qRes.data);
@@ -41,17 +120,35 @@ const KanbanQuiz = () => {
         }
     };
 
+    const formatTime = (seconds) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    };
+
     const handleCardClick = (q) => {
         // Allow re-viewing answered questions? Yes.
         // Allow re-answering? Backend blocks it.
+        // Block if quiz inactive/expired
+        if (!quizStatus?.is_active || timeRemaining === 0) {
+            alert('Mission Control: Quiz is offline or time has expired.');
+            return;
+        }
         setSelectedQ(q);
         setModalMessage('');
     };
 
     const submitAnswer = async (optionId) => {
+        // Prevent answering if quiz is inactive or time expired
+        if (!quizStatus?.is_active || timeRemaining === 0) {
+            setModalMessage('FAILED: Quiz inactive or time expired.');
+            return;
+        }
+
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.post('http://localhost:5000/api/quiz/answer', {
+            const res = await axios.post('https://odoo-ctf.easyinstance.com/api/quiz/answer', {
                 questionId: selectedQ.id,
                 optionId
             }, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -64,26 +161,74 @@ const KanbanQuiz = () => {
                 q.id === selectedQ.id ? { ...q, status: res.data.isCorrect ? 'CORRECT' : 'INCORRECT' } : q
             ));
 
-            // Close modal after delay? Or let user close.
+            // Close modal after delay
             setTimeout(() => setSelectedQ(null), 1500);
         } catch (err) {
             setModalMessage(err.response?.data || 'Error submitting');
+            if (err.response?.status === 403) {
+                setTimeout(() => {
+                    setSelectedQ(null);
+                    navigate('/');
+                }, 2000);
+            }
         }
     };
 
     // Filter Logic
     const filteredQuestions = questions.filter(q => {
-        const matchCat = filterCategory ? q.category_name === filterCategory || q.category_id == filterCategory : true; // API returns category_name in 'category' field? check backend.
-        // Backend: q.category = q.category_name.
+        const matchCat = filterCategory ? q.category_name === filterCategory || q.category_id == filterCategory : true;
         const matchDiff = filterDifficulty ? q.difficulty === filterDifficulty : true;
         return matchCat && matchDiff;
     });
 
     if (loading) return <div className="text-center text-neon-blue mt-10 animate-pulse font-mono">Scanning neural network...</div>;
 
+    if (!quizStatus || !quizStatus.is_active) {
+        return (
+            <div className="max-w-xl mx-auto mt-10 p-8 bg-cyber-gray border border-neon-purple rounded-xl shadow-2xl text-center">
+                <h2 className="text-3xl font-bold mb-4 text-neon-purple font-mono">Mission Offline</h2>
+                <p className="text-xl text-gray-300">Tactical operations are currently suspended. Stand by for command.</p>
+            </div>
+        );
+    }
+
+    if (timeRemaining === 0) {
+        return (
+            <div className="max-w-xl mx-auto mt-10 p-8 bg-cyber-gray border border-red-500 rounded-xl shadow-2xl text-center">
+                <h2 className="text-3xl font-bold mb-4 text-red-400 font-mono">Mission Failed</h2>
+                <p className="text-xl text-gray-300">Time limit exceeded. Operations terminated.</p>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-7xl mx-auto mt-6 px-4">
-            <h1 className="text-3xl text-neon-blue font-mono mb-6 text-center">Tactical_Mission_Board</h1>
+            <h1 className="text-3xl text-neon-blue font-mono mb-2 text-center">Tactical_Mission_Board</h1>
+
+            {/* Prominent Timer Display */}
+            {timeRemaining !== null && (
+                <div className={`mb-8 mx-auto max-w-2xl p-4 rounded-lg text-center border-2 ${timeRemaining < 300
+                    ? 'bg-red-900/30 border-red-500 animate-pulse'
+                    : timeRemaining < 600
+                        ? 'bg-yellow-900/30 border-yellow-500'
+                        : 'bg-blue-900/30 border-blue-500'
+                    }`}>
+                    <div className="text-xs font-mono text-gray-400 mb-1">MISSION CLOCK</div>
+                    <div className={`text-4xl font-bold font-mono ${timeRemaining < 300
+                        ? 'text-red-400'
+                        : timeRemaining < 600
+                            ? 'text-yellow-400'
+                            : 'text-blue-400'
+                        }`}>
+                        ⏱ {formatTime(timeRemaining)}
+                    </div>
+                    {timeRemaining < 300 && (
+                        <div className="text-xs font-mono text-red-400 mt-1 animate-pulse">
+                            ⚠️ CRITICAL TIME WARNING
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Filters */}
             <div className="flex flex-wrap gap-4 mb-8 justify-center font-mono">
@@ -118,8 +263,8 @@ const KanbanQuiz = () => {
                         <div className="flex justify-between items-start mb-4 font-mono text-xs">
                             <span className="text-gray-400 uppercase">{q.category}</span>
                             <span className={`px-2 py-1 rounded ${q.difficulty === 'HARD' ? 'text-red-400 bg-red-900/20' :
-                                    q.difficulty === 'MEDIUM' ? 'text-yellow-400 bg-yellow-900/20' :
-                                        'text-green-400 bg-green-900/20'
+                                q.difficulty === 'MEDIUM' ? 'text-yellow-400 bg-yellow-900/20' :
+                                    'text-green-400 bg-green-900/20'
                                 }`}>{q.difficulty}</span>
                         </div>
 
@@ -159,16 +304,18 @@ const KanbanQuiz = () => {
                                 <button
                                     key={opt.id}
                                     onClick={() => submitAnswer(opt.id)}
-                                    // Disable if already answered (Correct or Incorrect)
-                                    disabled={selectedQ.status !== 'UNANSWERED'}
+                                    // Disable if already answered (Correct or Incorrect) OR Quiz Status check
+                                    disabled={selectedQ.status !== 'UNANSWERED' || !quizStatus?.is_active || timeRemaining === 0}
                                     className={`
                                         w-full p-4 text-left border rounded transition-all font-mono
                                         ${selectedQ.status !== 'UNANSWERED'
                                             ? 'cursor-not-allowed opacity-50 border-gray-700 text-gray-500'
-                                            : 'border-gray-600 bg-dark-bg text-gray-300 hover:border-neon-blue hover:text-white hover:bg-gray-800'}
+                                            : (!quizStatus?.is_active || timeRemaining === 0)
+                                                ? 'cursor-not-allowed opacity-50 border-red-900/50 text-gray-500'
+                                                : 'border-gray-600 bg-dark-bg text-gray-300 hover:border-neon-blue hover:text-white hover:bg-gray-800'}
                                     `}
                                 >
-                                    <span className="mr-3 text-neon-blue">&gt;</span>{opt.content}
+                                    <span className={`mr-3 ${(!quizStatus?.is_active || timeRemaining === 0) ? 'text-gray-600' : 'text-neon-blue'}`}>&gt;</span>{opt.content}
                                 </button>
                             ))}
                         </div>
@@ -183,6 +330,11 @@ const KanbanQuiz = () => {
                         {selectedQ.status !== 'UNANSWERED' && (
                             <div className="mt-4 text-center text-gray-500 text-sm font-mono">
                                 [ This module has already been processed ]
+                            </div>
+                        )}
+                        {(!quizStatus?.is_active || timeRemaining === 0) && (
+                            <div className="mt-4 text-center text-red-500 text-sm font-mono animate-pulse">
+                                [ SYSTEM OFFLINE: CANNOT EXECUTE ]
                             </div>
                         )}
                     </div>

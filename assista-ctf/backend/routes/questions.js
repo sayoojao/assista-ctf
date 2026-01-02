@@ -232,13 +232,14 @@ router.get('/', async (req, res) => {
             SELECT q.*, c.name as category_name 
             FROM questions q
             LEFT JOIN categories c ON q.category_id = c.id
+            ORDER BY RANDOM()
         `);
         const questions = qRes.rows;
 
         // Fetch options
         if (questions.length === 0) return res.json([]);
         const qIds = questions.map(q => q.id).join(',');
-        const oRes = await db.query(`SELECT * FROM options WHERE question_id IN (${qIds})`);
+        const oRes = await db.query(`SELECT * FROM options WHERE question_id IN (${qIds}) ORDER BY RANDOM()`);
         const options = oRes.rows;
 
         // Fetch User Responses if logged in

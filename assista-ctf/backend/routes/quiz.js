@@ -3,17 +3,43 @@ const router = express.Router();
 const db = require('../db');
 const { verifyToken } = require('../middleware/auth');
 
+// Helper function to validate if quiz is active and not expired
+async function validateQuizActive() {
+    const settingsRes = await db.query(
+        'SELECT id, is_active, start_time, duration_minutes FROM quiz_settings ORDER BY id DESC LIMIT 1'
+    );
+
+    if (settingsRes.rows.length === 0 || !settingsRes.rows[0].is_active) {
+        return { active: false, reason: 'Quiz is not active' };
+    }
+
+    const settings = settingsRes.rows[0];
+    const startTime = new Date(settings.start_time).getTime();
+    const duration = settings.duration_minutes * 60 * 1000;
+    const endTime = startTime + duration;
+
+    if (Date.now() > endTime) {
+        // Auto-deactivate expired quiz
+        await db.query('UPDATE quiz_settings SET is_active = 0 WHERE id = ?', [settings.id]);
+        return { active: false, reason: 'Quiz time has expired' };
+    }
+
+    return { active: true, settings };
+}
+
+
 // Start a Quiz Session
 router.post('/start', verifyToken, async (req, res) => {
     try {
+        // Validate quiz is active and not expired
+        const validation = await validateQuizActive();
+        if (!validation.active) {
+            return res.status(403).json({ error: validation.reason });
+        }
+
         // Create a new session
         // SQLite: run returns 'this.lastID'
         const result = await db.query('INSERT INTO quiz_sessions (user_id) VALUES (?)', [req.user.id]);
-
-        // Fetch the ID (using lastID from 'run') workaround if wrapper supported it directly.
-        // My wrapper resolves { ...this, rows: [] } for run. So result.lastID should exist if using sqlite3 context.
-        // Let's verify wrapper logic. 
-        // "resolve(method === 'run' ? { ...this, rows: [] } : { rows });" -> 'this' in run callback is the statement object which has lastID.
 
         const sessionId = result.lastID;
         res.json({ sessionId, message: 'Quiz started' });
@@ -24,11 +50,18 @@ router.post('/start', verifyToken, async (req, res) => {
 });
 
 // Submit Answer (Status Update)
+// Submit Answer (Status Update)
 router.post('/answer', verifyToken, async (req, res) => {
     const { questionId, optionId } = req.body;
     // Note: sessionId is optional now. If not provided, we find or create a "Kanban" session for this user.
 
     try {
+        // VALIDATE QUIZ IS ACTIVE AND NOT EXPIRED
+        const validation = await validateQuizActive();
+        if (!validation.active) {
+            return res.status(403).json({ error: validation.reason });
+        }
+
         // Find an active session or create one for "Kanban Mode"
         // Let's just create one session per user for "General Play" and reuse it?
         // Or just create a new session for every single answer? (Bad for stats).
@@ -117,12 +150,14 @@ router.get('/leaderboard', async (req, res) => {
         // Let's do cumulative for now as per "rank users by total score".
 
         const result = await db.query(`
-            SELECT u.username, SUM(qs.total_score) as grand_total
+            SELECT u.username, 
+                   SUM(qs.total_score) as grand_total,
+                   SUM((julianday(COALESCE(qs.completed_at, CURRENT_TIMESTAMP)) - julianday(qs.started_at)) * 86400) as total_time_seconds
             FROM users u
             JOIN quiz_sessions qs ON u.id = qs.user_id
             WHERE u.role != 'ADMIN'
             GROUP BY u.id
-            ORDER BY grand_total DESC
+            ORDER BY grand_total DESC, total_time_seconds ASC
             LIMIT 10
         `);
 

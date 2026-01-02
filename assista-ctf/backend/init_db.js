@@ -19,6 +19,14 @@ async function init() {
         }
     }
     console.log('Database initialized.');
+    // Close the database connection properly
+    db.db.close((err) => {
+        if (err) {
+            console.error('Error closing database:', err);
+            process.exit(1);
+        }
+        process.exit(0);
+    });
 }
 
 init();

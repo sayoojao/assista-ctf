@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password) => {
         try {
-            const res = await axios.post('http://localhost:5000/api/auth/login', { email, password });
+            const res = await axios.post('https://odoo-ctf.easyinstance.com/api/auth/login', { email, password });
             const { token, role, username } = res.data;
             localStorage.setItem('token', token);
             const decoded = jwtDecode(token);
@@ -43,7 +43,7 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (username, email, password, role = 'USER') => {
         try {
-            await axios.post('http://localhost:5000/api/auth/register', { username, email, password, role });
+            await axios.post('https://odoo-ctf.easyinstance.com/api/auth/register', { username, email, password, role });
             return true;
         } catch (err) {
             console.error(err);

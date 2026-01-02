@@ -50,3 +50,11 @@ CREATE TABLE IF NOT EXISTS user_responses (
   selected_option_id INTEGER REFERENCES options(id),
   is_correct BOOLEAN
 );
+
+-- Quiz Settings Table
+CREATE TABLE IF NOT EXISTS quiz_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  is_active BOOLEAN DEFAULT 0,
+  start_time TIMESTAMP,
+  duration_minutes INTEGER DEFAULT 0
+);
